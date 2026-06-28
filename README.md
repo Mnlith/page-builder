@@ -2,7 +2,7 @@
 
 A **Deno-based HTML template engine** that manages virtual files (HTML templates) with two rendering modes — static and dynamic — plus a composition system for building pages from reusable components.
 Project made in late 2025 to simply tinker a small page builder engine to go inside an http server.
-The main idea was to craft something that could create dynamic componenent for a small project.
+The main idea was to craft something that could create dynamic component for a small project.
 Also, the doc has been made by my local clanker, I hate doing those.
 
 ---
@@ -21,6 +21,7 @@ Also, the doc has been made by my local clanker, I hate doing those.
   - [Static Virtual Files](#static-virtual-files)
   - [Dynamic Virtual Files](#dynamic-virtual-files)
   - [Composing Pages from Components](#composing-pages-from-components)
+    - [Nested (Recursive) Components](#nested-recursive-components)
 - [Architecture Overview](#architecture-overview)
 
 ---
@@ -105,10 +106,10 @@ Registers a static virtual file. The file's path must exist on disk, and its dat
 **Parameters:**
 ```ts
 {
-  name: string;                        // Unique identifier
+  name: string;                           // Unique identifier
   content: {
-    path: string;                      // Filesystem path to .html file
-    data: { [key: string]: any };      // Fixed placeholder values
+    path: string;                         // Filesystem path to .html file
+    data: { [key: string]: any };         // Fixed placeholder values
   }
 }
 ```
@@ -120,9 +121,9 @@ Registers a dynamic virtual file. A schema defines what keys and types the build
 **Parameters:**
 ```ts
 {
-  name: string;                        // Unique identifier
+  name: string;                            // Unique identifier
   content: {
-    path: string;                      // Filesystem path to .html file
+    path: string;                          // Filesystem path to .html file
     schema: { [key: string]: SchemaType }; // Type definitions for placeholders
   }
 }
@@ -166,6 +167,7 @@ Builds a full page by composing one base template with zero or more component te
 2. Rendered HTML strings are mapped to their component names (e.g., `{ statusDisplay: "<p>Online</p>" }`)
 3. These values are merged into the base file's data object
 4. The base template is rendered, replacing any placeholders that match component names
+5. Any remaining dynamic component placeholders found in the rendered HTML are **recursively resolved**, enabling multi-level nesting (A → B → C) without listing every level explicitly
 
 **Parameters:**
 ```ts
@@ -178,6 +180,43 @@ Builds a full page by composing one base template with zero or more component te
 Each item can be either a **string** (just the name, no custom data) or an **object** with `name` and `data`.
 
 Throws if any referenced virtual file does not exist.
+
+### Nested (Recursive) Components
+
+By default `compose()` resolves one level: you list a base and its direct children.
+If those children themselves contain dynamic component placeholders (`#theme`, `#footer` etc.),
+the engine automatically follows them — no extra configuration needed.
+
+**Example setup:**
+```html
+<!-- index.html (base) -->
+<h1>#userType</h1>
+<div>#statusDisplay</div>
+
+<!-- statusDisplay.html (dynamic, nested) -->
+<p>#status</p>
+<div>#theme</div>  <!-- references another dynamic component -->
+
+<!-- theme.html (dynamic, deepest level) -->
+<span>#label</span>
+```
+```ts
+engine.addDynamic({ name: "index", content: { path: "./index.html", schema: { userType: SchemaType.string } } });
+engine.addDynamic({ name: "statusDisplay", content: { path: "./statusDisplay.html", schema: { status: SchemaType.string } } });
+engine.addDynamic({ name: "theme", content: { path: "./theme.html", schema: { label: SchemaType.string } } });
+
+// Only the top-level component is listed — #theme resolves inside it automatically
+const html = engine.compose({
+  baseFile: { name: "index", data: { userType: "Admin" } },
+  components: [{ name: "statusDisplay", data: { status: "Online" } }],
+});
+// Resolution order:
+//   compose → build(statusDisplay) → HTML contains #theme
+//           → resolveComponents(HTML) → build(theme) → fully resolved
+```
+
+**Cycle detection:** If a component references itself (directly or through a chain, e.g. A → B → C → A),
+the engine detects the cycle and leaves the placeholder as-is rather than entering an infinite loop.
 
 ---
 
@@ -240,7 +279,7 @@ const html = engine.compose({
 │              PageBuilder                  │
 │                                           │
 │  ┌─────────────┐  ┌─────────────┐         │
-│  │  addStatic()│  │ addDynamic()│         │
+│  │ addStatic() │  │ addDynamic()│         │
 │  └──────┬──────┘  └──────┬──────┘         │
 │         │                │                │
 │         ▼                ▼                │
@@ -252,9 +291,10 @@ const html = engine.compose({
 │  └──────┬───────┘                         │
 │         │                                 │
 │         ▼                                 │
-│  ┌──────────────┐                         │
+|  ┌──────────────┐                         │
 │  │   compose()  │  ← builds components,   │
 │  │              │     injects into base   │
+│  │              │     + resolves nested   │
 │  └──────────────┘                         │
 └───────────────────────────────────────────┘
 ```
@@ -296,6 +336,9 @@ compose({ baseFile: ..., components: [...] })
   │
   └── build(baseFile.name, mergedData)
         → renders final composed page
+        → scans HTML for unresolved #placeholders
+          that match registered dynamic virtual files
+            → recursively builds each one (with cycle detection)
 ```
 
 ---

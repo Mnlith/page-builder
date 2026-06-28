@@ -1,4 +1,4 @@
-import { assertEquals, assertThrows } from "@std/assert";
+import { assert, assertEquals, assertThrows } from "@std/assert";
 import { PageBuilder, SchemaType } from "./PageBuilder.ts";
 
 const pageBuilder = new PageBuilder();
@@ -726,4 +726,208 @@ Deno.test("Error test compose", () => {
 	assertEquals(newComp, composeTrueValue);
 	pageBuilder.remove("index");
 	pageBuilder.remove("statusDisplay");
+});
+
+// =============================================================================
+// Additional tests added after mutation fix + edge cases
+// =============================================================================
+
+Deno.test("Mutation regression - compose should not mutate stored virtual files", () => {
+	const page = new PageBuilder();
+
+	page.addStatic({
+		name: "mutBase",
+		content: { path: "./index.html", data: { userType: "Admin" } },
+	});
+	page.addDynamic({
+		name: "mutComp",
+		content: { path: "./index2.html", schema: { status: SchemaType.string } },
+	});
+
+	// Compose once - this used to mutate the stored virtualFiles[] in-place
+	page.compose({
+		baseFile: { name: "mutBase", data: { userType: "Admin" } },
+		components: [{ name: "mutComp", data: { status: "Online" } }],
+	});
+
+	// Now build the base standalone (no args) - stored data must NOT have been polluted
+	const standalone = page.build("mutBase");
+	assert(typeof standalone === "string" && standalone.includes("#statusDisplay"), "Expected stored static data to remain unmodified after compose()");
+
+	page.remove("mutBase");
+	page.remove("mutComp");
+});
+
+Deno.test("Multiple consecutive composes are isolated from each other", () => {
+	const page = new PageBuilder();
+
+	page.addStatic({
+		name: "isolatedBase",
+		content: { path: "./index.html", data: { userType: "Guest" } },
+	});
+	page.addDynamic({
+		name: "compA",
+		content: { path: "./index2.html", schema: { status: SchemaType.string } },
+	});
+	page.addDynamic({
+		name: "compB",
+		content: { path: "./index2.html", schema: { value: SchemaType.number } },
+	});
+
+	// First composition with compA / status=Alpha
+	const result1 = page.compose({
+		baseFile: { name: "isolatedBase", data: { userType: "First" } },
+		components: [{ name: "compA", data: { status: "Alpha" } }],
+	});
+
+	// Second composition with compB / value=42 (different component, different data)
+	const result2 = page.compose({
+		baseFile: { name: "isolatedBase", data: { userType: "Second" } },
+		components: [{ name: "compB", data: { value: 42 } }],
+	});
+
+	// Each result must contain its own baseData values - no cross-contamination
+	assert(typeof result1 === "string" && result1.includes("First") && !result1.includes("Second"), "Result 1 should reflect first compose, not second");
+	assert(typeof result2 === "string" && result2.includes("Second") && !result2.includes("First"), "Result 2 should reflect second compose, not first");
+
+	page.remove("isolatedBase");
+	page.remove("compA");
+	page.remove("compB");
+});
+
+Deno.test("Compose with an empty components array renders the base as-is", () => {
+	const page = new PageBuilder();
+
+	page.addStatic({
+		name: "emptyCompBase",
+		content: { path: "./index.html", data: { userType: "Nobody" } },
+	});
+
+	const result = page.compose({
+		baseFile: "emptyCompBase",
+		components: [],
+	});
+
+	assert(typeof result === "string" && result.includes("Hello Nobody"), "Expected base file to render with its stored data even when no components are provided");
+
+	page.remove("emptyCompBase");
+});
+
+Deno.test("Build handles falsy data values (0, false, empty string) correctly", () => {
+	const page = new PageBuilder();
+
+	page.addDynamic({
+		name: "falsy",
+		content: { path: "./falsy.html", schema: { num: SchemaType.number } },
+	});
+
+	const htmlNum = page.build("falsy", { num: 0 });
+	assert(typeof htmlNum === "string" && htmlNum.includes("0"), "Expected #num to be replaced with '0'");
+
+	// Boolean false - falsy in JS but a perfectly valid data value
+	page.addDynamic({
+		name: "bool",
+		content: { path: "./falsy.html", schema: { active: SchemaType.boolean } },
+	});
+	const htmlBool = page.build("bool", { active: false });
+	assert(typeof htmlBool === "string" && htmlBool.includes("false"), "Expected #active to be replaced with 'false'");
+
+	// Empty string - falsy in JS but a perfectly valid data value
+	page.addDynamic({
+		name: "emptyStr",
+		content: { path: "./falsy.html", schema: { text: SchemaType.string } },
+	});
+	const htmlEmpty = page.build("emptyStr", { text: "" });
+	assert(typeof htmlEmpty === "string" && !htmlEmpty.includes("#text"), "Expected #text to be replaced with empty string (not left as placeholder)");
+
+	page.remove("falsy");
+	page.remove("bool");
+	page.remove("emptyStr");
+});
+
+Deno.test("Build without data on a static file that has no stored data field", () => {
+	const page = new PageBuilder();
+
+	// bare.html contains: "<p>No placeholders here.</p>"
+	page.addStatic({
+		name: "bareFile",
+		content: { path: "./bare.html", data: {} },
+	});
+
+	// No second argument and no stored data - should not throw, just return raw HTML
+	const html = page.build("bareFile");
+	assert(typeof html === "string" && html.includes("No placeholders here."), "Expected bare template to render unchanged when no data is available");
+
+	page.remove("bareFile");
+});
+
+Deno.test("Schema validation requires exact key match (rejects extra keys)", () => {
+	const page = new PageBuilder();
+
+	page.addDynamic({
+		name: "schemaExact",
+		content: { path: "./switch.html", schema: { name: SchemaType.string } },
+	});
+
+	// Passing more keys than the schema defines should throw - length check enforces exact match.
+	assertThrows(
+		() => page.build("schemaExact", { name: "Alice", age: 30 }),
+		Error,
+		`Error, schemaExact schema's doesn't correspond the data it received`,
+	);
+
+	page.remove("schemaExact");
+});
+
+Deno.test("Schema type mismatch throws a descriptive error", () => {
+	const page = new PageBuilder();
+
+	page.addDynamic({
+		name: "typedMismatch",
+		content: { path: "./falsy.html", schema: { count: SchemaType.number } },
+	});
+
+	assertThrows(
+		() => page.build("typedMismatch", { count: "42" }),
+		Error,
+		`Error, typedMismatch schema's doesn't correspond the data it received`,
+	);
+
+	page.remove("typedMismatch");
+});
+
+Deno.test("Dynamic file can be switched to static via updateStatic", () => {
+	const page = new PageBuilder();
+
+	page.addDynamic({
+		name: "switchToStatic",
+		content: { path: "./switch.html", schema: { label: SchemaType.string } },
+	});
+
+	// Switch from dynamic to static with fixed data
+	page.updateStatic("switchToStatic", { label: "I am now static" });
+
+	// Should build without passing a second argument (uses stored static data)
+	const html = page.build("switchToStatic");
+	assert(typeof html === "string" && html.includes("I am now static"), "Expected file built from newly-set static data");
+
+	page.remove("switchToStatic");
+});
+
+Deno.test("Static file can be switched to dynamic via updateDynamic", () => {
+	const page = new PageBuilder();
+
+	page.addStatic({
+		name: "switchToDynamic",
+		content: { path: "./switch.html", data: { label: "I am now dynamic" } },
+	});
+
+	// Switch from static to dynamic with a schema (data is discarded)
+	page.updateDynamic("switchToDynamic", { label: SchemaType.string });
+
+	// Now requires data at build time
+	const html = page.build("switchToDynamic", { label: "Passed at runtime" });
+	assert(typeof html === "string" && html.includes("Passed at runtime"), "Expected file to use dynamically-provided data after type switch");
+
+	page.remove("switchToDynamic");
 });

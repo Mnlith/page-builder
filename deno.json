@@ -4,5 +4,16 @@
   },
   "imports": {
     "@std/assert": "jsr:@std/assert@1"
+  },
+  "fmt": {
+    "useTabs": true,
+    "lineWidth": 324,
+    "indentWidth": 4,
+    "semiColons": true,
+    "singleQuote": false,
+    "proseWrap": "preserve",
+    "jsx.forceNewLinesSurroundingContent": false,
+    "jsx.multiLineParens": "never",
+    "jsx.bracketPosition": "sameLine"
   }
 }

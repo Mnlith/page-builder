@@ -277,19 +277,21 @@ export class PageBuilder {
       const vFile = (() => {
         const _static = typeof baseFile === "string";
         const _name = _static ? baseFile : baseFile.name;
-        const _vFile = this.getVirtualFiles(_name);
-        if (!_static) {
-          _vFile.content.data = baseFile.data;
-        }
-        return _vFile;
+        // Create a shallow copy to avoid mutating the stored virtual file
+        return { ...this.getVirtualFiles(_name) };
       })();
+
+      // Use local variables instead of mutating stored virtual files
+      let baseData: any = typeof baseFile === "string"
+        ? vFile.content.data
+        : baseFile.data;
 
       const compVFile = components.map((item) => {
         const _static = typeof item === "string";
         const _name = _static ? item : item.name;
-        const _vFile = this.getVirtualFiles(_name);
+        // Create a shallow copy to avoid mutating the stored virtual file
+        const _vFile = { ...this.getVirtualFiles(_name) };
         if (!_static) {
-          // Not the best but ts wouldn't stop complaining
           _vFile.content.data = components.filter((item) =>
             typeof item !== "string"
           ).find((component) =>
@@ -298,6 +300,7 @@ export class PageBuilder {
         }
         return _vFile;
       });
+
       // Create the file as string
       // First the components
       const componentsData = compVFile.map((item) => {
@@ -305,9 +308,11 @@ export class PageBuilder {
         return { [item.name]: result };
       });
 
-      // Update baseFile data to have components
-      vFile.content.data = {
-        ...vFile.content.data,
+      // Merge component results into base data (local only)
+      baseData = {
+        ...baseData,
+        ...Object.assign({}, ...componentsData),
+      };
         ...Object.assign({}, ...componentsData),
       };
 

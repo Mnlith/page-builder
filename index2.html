@@ -1,0 +1,11 @@
+<div>
+    <span>#status</span>
+    <button onclick="send()">Log me off</button>
+    <script>
+        const send = () => {
+            document.addEventListener("sendEvent", () => {
+                console.log("Custom 'sendEvent' received!");
+            });
+        }
+    </script>
+</div>

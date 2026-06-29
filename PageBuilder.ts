@@ -327,6 +327,8 @@ export class PageBuilder {
 	 * Recursively resolve dynamic component placeholders found in rendered HTML.
 	 * Enables multi-level nesting (A → B → C where each references the next).
 	 * Detects cycles to prevent infinite loops.
+	 * @param html | Rendered HTML string containing placeholder tags.
+	 * @param inProgress | Set of component names currently being resolved, used for cycle detection.
 	 */
 	private resolveComponents(
 		html: string,

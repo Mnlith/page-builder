@@ -5,12 +5,12 @@ const engine = new PageBuilder();
 */
 // Registering static files
 engine.addStatic({
-  name: "index",
-  content: { path: "./index.html", data: { userType: "Admin" } },
+	name: "index",
+	content: { path: "./index.html", data: { userType: "Admin" } },
 });
 engine.addStatic({
-  name: "statusDisplay",
-  content: { path: "./index2.html", data: { status: "Online" } },
+	name: "statusDisplay",
+	content: { path: "./index2.html", data: { status: "Online" } },
 });
 
 // Generating the statusDisplay component
@@ -21,8 +21,8 @@ console.log(componentFile);
 /* Should auto look for statusDisplay page, change components to components data and only pass
     it as param if there is dynamic files here*/
 const baseFile = engine.compose({
-  baseFile: "index",
-  components: ["statusDisplay"],
+	baseFile: "index",
+	components: ["statusDisplay"],
 });
 console.log(baseFile);
 
@@ -30,7 +30,6 @@ engine.remove("index");
 engine.remove("statusDisplay");
 
 //------------------------------------------------------------------------------------
-
 
 /*
 ----  Dynamic exemple  ---------------------------------------------------------------
@@ -40,15 +39,15 @@ engine.remove("statusDisplay");
     Index has a key statusDisplay that we store the component as a string so we describe statusDisplay as string
 */
 engine.addDynamic({
-  name: "index",
-  content: {
-    path: "./index.html",
-    schema: { userType: SchemaType.string, statusDisplay: SchemaType.string },
-  },
+	name: "index",
+	content: {
+		path: "./index.html",
+		schema: { userType: SchemaType.string, statusDisplay: SchemaType.string },
+	},
 });
 engine.addDynamic({
-  name: "statusDisplay",
-  content: { path: "./index2.html", schema: { status: SchemaType.string } },
+	name: "statusDisplay",
+	content: { path: "./index2.html", schema: { status: SchemaType.string } },
 });
 
 // Generating the statusDisplay component
@@ -60,8 +59,8 @@ console.log(componentFile2);
     in the baseFile compose will build the components and then place them in the baseFile
 */
 const baseFile2 = engine.compose({
-  baseFile: { name: "index", data: { userType: "Admin" } },
-  components: [{ name: "statusDisplay", data: { status: "Online" } }],
+	baseFile: { name: "index", data: { userType: "Admin" } },
+	components: [{ name: "statusDisplay", data: { status: "Online" } }],
 });
 console.log(baseFile2);
 
@@ -75,6 +74,4 @@ console.log("END HTML FILE ===========================");*/
 //TODO
 /*
 Should be able to send unregisted virtualFile do be dynamic
-OR Register page but with a stric type (not passing data but dataInfos that will check in the dynamic call if the data is correct else error);
-engine.compose() should be able to be recursive to just L2
 */
